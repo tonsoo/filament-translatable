@@ -6,6 +6,7 @@ namespace Tonsoo\FilamentTranslatable\Concerns;
 
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
+use Tonsoo\FilamentTranslatable\Database\Eloquent\TranslatableBuilder;
 
 trait HasTranslations
 {
@@ -143,6 +144,26 @@ trait HasTranslations
         }
 
         return (string) $fallbackValue;
+    }
+
+    public function newEloquentBuilder($query): \Illuminate\Database\Eloquent\Builder
+    {
+        $builder = parent::newEloquentBuilder($query);
+
+        if ($builder instanceof TranslatableBuilder) {
+            return $builder;
+        }
+
+        if (get_class($builder) !== \Illuminate\Database\Eloquent\Builder::class) {
+            return $builder;
+        }
+
+        return new TranslatableBuilder($query);
+    }
+
+    public function getQueryLocaleForTranslations(): string
+    {
+        return (string) app()->getLocale();
     }
 
     protected function assertAttributeIsTranslatable(string $attribute): void

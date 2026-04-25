@@ -130,3 +130,39 @@ $post->getTranslations('title');
 $post->title = 'Hello'; // current locale
 $post->{'title.es'} = 'Hola'; // explicit locale
 ```
+
+## Locale-Aware Query Columns
+
+When querying translatable attributes, the package maps plain translatable column names to the current locale JSON path.
+
+```php
+app()->setLocale('pt_BR');
+
+Post::query()->where('title', '=', 'Teste');
+// same intent as querying: title->pt_BR = 'Teste'
+```
+
+You can also pass explicit locale dot notation:
+
+```php
+Post::query()->where('title.pt_BR', '=', 'Teste');
+```
+
+Disable this behavior per query:
+
+```php
+Post::query()
+    ->withoutAutoTranslationsQuery()
+    ->where('title->en', '=', 'Hello');
+```
+
+Re-enable later in the same chain:
+
+```php
+Post::query()
+    ->where('title', 'Teste')
+    ->withoutAutoTranslationsQuery()
+    ->where('title->en', 'Hello')
+    ->withAutoTranslationsQuery()
+    ->where('title', 'Teste');
+```
