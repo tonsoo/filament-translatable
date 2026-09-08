@@ -88,6 +88,18 @@ it('normalizes nested translatable values recursively on save in single mode', f
         ]);
 });
 
+it('leaves the application locale as it found it', function (): void {
+    app()->setLocale('en');
+
+    $page = new FakeEditPage();
+    $page->translatableLocale = 'es';
+
+    $page->mutateForFill(['name' => ['en' => 'Name', 'es' => 'Nombre']]);
+    $page->mutateForSave(['name' => 'Nombre nuevo']);
+
+    expect(app()->getLocale())->toBe('en');
+});
+
 class FakeEditPage
 {
     use InteractsWithTranslatableResourceData;

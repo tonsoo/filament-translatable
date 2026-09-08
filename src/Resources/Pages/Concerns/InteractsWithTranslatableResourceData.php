@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tonsoo\FilamentTranslatable\Resources\Pages\Concerns;
 
+use Closure;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 use Tonsoo\FilamentTranslatable\Support\ModelTranslatableAttributesResolver;
 use Tonsoo\FilamentTranslatable\Support\ResourceTranslatableDataMutator;
+use Tonsoo\FilamentTranslatable\Support\TranslatablePaths;
 use Tonsoo\FilamentTranslatable\Support\TranslatableResourceLocaleResolver;
 
 trait InteractsWithTranslatableResourceData
@@ -21,14 +23,11 @@ trait InteractsWithTranslatableResourceData
      */
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        $activeLocale = $this->getActiveTranslatableLocale();
-        app()->setLocale($activeLocale);
-
-        return $this->dataMutator()->mutateForFill(
+        return $this->inTheTranslatableLocale(fn (string $locale): array => $this->dataMutator()->mutateForFill(
             $data,
-            $this->getTranslatableAttributes(),
-            $activeLocale,
-        );
+            $this->getTranslatablePaths(),
+            $locale,
+        ));
     }
 
     /**
@@ -58,15 +57,29 @@ trait InteractsWithTranslatableResourceData
      */
     protected function mutateTranslatableDataBeforePersist(array $data, ?Model $record = null): array
     {
-        $activeLocale = $this->getActiveTranslatableLocale();
-        app()->setLocale($activeLocale);
-
-        return $this->dataMutator()->mutateForPersist(
+        return $this->inTheTranslatableLocale(fn (string $locale): array => $this->dataMutator()->mutateForPersist(
             $data,
-            $this->getTranslatableAttributes(),
-            $activeLocale,
+            $this->getTranslatablePaths(),
+            $locale,
             $record,
-        );
+        ));
+    }
+
+    /**
+     * @param Closure(string): mixed $callback
+     */
+    protected function inTheTranslatableLocale(Closure $callback): mixed
+    {
+        $previous = app()->getLocale();
+        $active = $this->getActiveTranslatableLocale();
+
+        app()->setLocale($active);
+
+        try {
+            return $callback($active);
+        } finally {
+            app()->setLocale($previous);
+        }
     }
 
     /**
@@ -80,6 +93,17 @@ trait InteractsWithTranslatableResourceData
         }
 
         return $this->modelResolver()->resolve(new $modelClass());
+    }
+
+    protected function getTranslatablePaths(): TranslatablePaths
+    {
+        $modelClass = $this->resolveResourceModelClass();
+
+        if (! is_string($modelClass) || ! class_exists($modelClass)) {
+            return TranslatablePaths::make([]);
+        }
+
+        return $this->modelResolver()->paths(new $modelClass());
     }
 
     /**
@@ -121,10 +145,11 @@ trait InteractsWithTranslatableResourceData
         }
 
         $this->translatableLocale = $locale;
-        app()->setLocale($locale);
         $this->localeResolver()->rememberActiveLocale(static::getResource(), $locale);
 
-        $this->refillFormForTranslatableLocale();
+        $this->inTheTranslatableLocale(function (): void {
+            $this->refillFormForTranslatableLocale();
+        });
     }
 
     protected function refillFormForTranslatableLocale(): void

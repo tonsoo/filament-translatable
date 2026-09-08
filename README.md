@@ -40,6 +40,136 @@ class Post extends Model
 
 Translatable attributes must be JSON columns.
 
+### Translating one place inside a column
+
+A name in `$translatable` is a column that holds a map of languages, and it is
+also matched **by name wherever it appears** in a form payload — which is what
+makes a repeater of rows carrying the same field work with no configuration.
+
+That is a guess, and it is the wrong one as soon as a JSON column holds a
+structure with a field that happens to share a name. Say where the translation
+actually is instead:
+
+```php
+class Page extends Model
+{
+    use HasTranslations;
+
+    protected array $translatable = [
+        'title',                    // the column is a map of languages
+        'content.field.input',      // one place inside the `content` column is
+        'content.items.*.heading',  // `*` is any key at that depth - a repeater
+    ];
+}
+```
+
+Declaring a path makes that column **structured**: inside it, only the declared
+places are translated, and a name matched by accident no longer is. Everything
+else in the column is left exactly as it was written.
+
+`$page->content` comes back with its own shape, with those places resolved to
+the language being read (falling back the same way a column does), so a template
+gets sentences where the sentences are. Writing keeps the languages nobody is
+editing:
+
+```php
+app()->setLocale('es');
+
+$page->content = ['field' => ['input' => 'Escrito aqui']];
+$page->getTranslations('content.field.input');
+// ['en' => 'Written here', 'es' => 'Escrito aqui']
+
+$page->setTranslation('content.items.0.heading', 'es', 'Primero');
+$page->getTranslation('content.items.0.heading', 'es');
+```
+
+`setTranslation()` and `getTranslations()` address one value, so the path they
+are given may not contain a wildcard.
+
+### Marking the fields instead of writing the paths
+
+Paths on the model track the shape of a form, and the two drift. Mark the fields
+instead and let the model ask what was marked:
+
+```php
+use Filament\Forms\Components\TextInput;
+use Tonsoo\FilamentTranslatable\Support\TranslatablePathCollector;
+
+TextInput::make('heading')->translatable(),   // ->translatable(false) takes it back
+```
+
+```php
+class Page extends Model
+{
+    use HasTranslations;
+
+    public function getTranslatableAttributes(): array
+    {
+        return ['title', ...TranslatablePathCollector::collect([PageBuilder::blocks()])];
+    }
+}
+```
+
+The collector walks the schema **definition**, so a repeater or a builder becomes
+the wildcard the stored data needs:
+
+```php
+TranslatablePathCollector::collect([
+    Builder::make('blocks')->blocks([
+        Block::make('hero')->schema([
+            TextInput::make('heading')->translatable(),
+            TextInput::make('image'),
+        ]),
+        Block::make('grid')->schema([
+            Repeater::make('items')->schema([
+                TextInput::make('title')->translatable(),
+            ]),
+        ]),
+    ]),
+]);
+
+// ['blocks.*.data.heading', 'blocks.*.data.items.*.title']
+```
+
+Pass a prefix to collect from block definitions on their own:
+`TranslatablePathCollector::collect($blocks, 'blocks.*.data')`.
+
+The declarations are read once per model class per process, so overriding
+`getTranslatableAttributes()` costs one walk however many records are loaded.
+
+**The model still has to be the one that answers.** A form only exists in the
+panel, while the site rendering a page, an API serialising it and a queued job
+reading it all go through the model — and a value stored as
+`{"en": …, "pt_BR": …}` is unreadable to anything that does not know it is a
+translation. Marking a field is a way of writing the model's list without
+repeating yourself, not a second place for the answer to live.
+
+### Columns that hold no translations at all
+
+A page builder's sections are structure from top to bottom. Name the column and
+nothing inside it is translated, or even looked at:
+
+```php
+protected array $translatableExcept = ['blocks'];
+```
+
+Without this, a page whose own `title` is translatable and whose builder has a
+card with a field called `title` stores that card's title as
+`{"en": "A card"}` — which the panel hides from you, because it resolves the map
+back to a string every time the form is opened, and which the template printing
+it does not.
+
+Two things worth knowing:
+
+- **Order matters for wildcards.** The languages nobody is editing are carried
+  over by position, because a builder or repeater dehydrates to a list and the
+  key that identified an item while the form was open is gone by the time the
+  payload is saved. Reordering items and saving in a second language moves the
+  first language's text with the position, not with the item.
+- **A declared path is not a column.** Query mapping (`where('title', …)` →
+  `title->{locale}`) applies to the columns only; nothing tries to select
+  `content.field.input->es`.
+
 ## Filament Page Trait
 
 Use the page trait in your own create/edit pages:
@@ -129,7 +259,16 @@ $post->getTranslations('title');
 
 $post->title = 'Hello'; // current locale
 $post->{'title.es'} = 'Hola'; // explicit locale
+
+// Paths, for a translation that lives inside a column
+$post->setTranslation('content.field.input', 'es', 'Escrito aqui');
+$post->getTranslation('content.field.input', 'es');
+$post->getTranslations('content.field.input');
 ```
+
+Dot notation on the model itself is read as *attribute and locale*
+(`title.es`), so a path is passed to the methods above rather than to the
+property.
 
 ## Locale-Aware Query Columns
 

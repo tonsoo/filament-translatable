@@ -14,10 +14,10 @@ final class FieldRelationshipTranslatableDataNormalizer
 
     /**
      * @param array<string, mixed> $data
-     * @param array<int, string> $translatableAttributes
+     * @param array<int, string>|TranslatablePaths $translatableAttributes
      * @return array<string, mixed>
      */
-    public function normalizeForFill(array $data, array $translatableAttributes, string $activeLocale): array
+    public function normalizeForFill(array $data, array|TranslatablePaths $translatableAttributes, string $activeLocale): array
     {
         return $this->normalizeData(
             $data,
@@ -36,12 +36,12 @@ final class FieldRelationshipTranslatableDataNormalizer
 
     /**
      * @param array<string, mixed> $data
-     * @param array<int, string> $translatableAttributes
+     * @param array<int, string>|TranslatablePaths $translatableAttributes
      * @return array<string, mixed>
      */
     public function normalizeForPersist(
         array $data,
-        array $translatableAttributes,
+        array|TranslatablePaths $translatableAttributes,
         string $activeLocale,
         ?Model $record = null,
     ): array

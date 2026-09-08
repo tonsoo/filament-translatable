@@ -15,19 +15,24 @@ final class ResourceTranslatableDataMutator
 
     /**
      * @param array<string, mixed> $data
-     * @param array<int, string> $translatableAttributes
+     * @param array<int, string>|TranslatablePaths $translatableAttributes
      * @return array<string, mixed>
      */
-    public function mutateForFill(array $data, array $translatableAttributes, string $activeLocale): array
-    {
-        foreach ($translatableAttributes as $attribute) {
+    public function mutateForFill(
+        array $data,
+        array|TranslatablePaths $translatableAttributes,
+        string $activeLocale,
+    ): array {
+        $paths = $this->paths($translatableAttributes);
+
+        foreach ($paths->columns() as $attribute) {
             $translations = $this->normalizeTranslations($data[$attribute] ?? []);
             $data[$attribute] = $this->resolveSingleLocaleValueForFill($translations, $activeLocale);
         }
 
         return $this->normalizeData(
             $data,
-            $translatableAttributes,
+            $paths,
             $activeLocale,
             function (mixed $value) use ($activeLocale) {
                 $resolved = $this->normalizeSingleLocaleScalar(
@@ -42,16 +47,18 @@ final class ResourceTranslatableDataMutator
 
     /**
      * @param array<string, mixed> $data
-     * @param array<int, string> $translatableAttributes
+     * @param array<int, string>|TranslatablePaths $translatableAttributes
      * @return array<string, mixed>
      */
     public function mutateForPersist(
         array $data,
-        array $translatableAttributes,
+        array|TranslatablePaths $translatableAttributes,
         string $activeLocale,
         ?Model $record = null,
     ): array {
-        foreach ($translatableAttributes as $attribute) {
+        $paths = $this->paths($translatableAttributes);
+
+        foreach ($paths->columns() as $attribute) {
             $value = $data[$attribute] ?? null;
             $translations = $this->normalizeTranslationMapForPersist($value, $activeLocale);
 
@@ -67,10 +74,32 @@ final class ResourceTranslatableDataMutator
 
         return $this->normalizeData(
             $data,
-            $translatableAttributes,
+            $paths,
             $activeLocale,
-            fn (mixed $value) => $this->normalizeTranslationMapForPersist($value, $activeLocale)
+            function (mixed $value, mixed $key, array $path = []) use ($activeLocale, $record) {
+                $translations = $this->normalizeTranslationMapForPersist($value, $activeLocale);
+
+                if (! $record instanceof Model) {
+                    return $translations;
+                }
+
+                $current = count($path) > 1
+                    ? $this->getRecordTranslationsAtPath($record, $path)
+                    : $this->getRecordTranslations($record, (string) $key);
+
+                return $current === [] ? $translations : array_replace($current, $translations);
+            }
         );
+    }
+
+    /**
+     * @param array<int, string>|TranslatablePaths $translatableAttributes
+     */
+    private function paths(array|TranslatablePaths $translatableAttributes): TranslatablePaths
+    {
+        return $translatableAttributes instanceof TranslatablePaths
+            ? $translatableAttributes
+            : TranslatablePaths::make($translatableAttributes);
     }
 
     /**
@@ -153,7 +182,32 @@ final class ResourceTranslatableDataMutator
             return is_array($translations) ? $translations : [];
         }
 
-        $raw = $record->getRawOriginal($attribute);
+        return $this->decodeColumn($record, $attribute);
+    }
+
+    /**
+     * @param array<int, string|int> $path
+     * @return array<string, string|null>
+     */
+    protected function getRecordTranslationsAtPath(Model $record, array $path): array
+    {
+        $stored = $this->decodeColumn($record, (string) $path[0]);
+
+        if ($stored === []) {
+            return [];
+        }
+
+        $value = data_get($stored, array_map('strval', array_slice($path, 1)));
+
+        return is_array($value) && $this->isAssociativeLocaleMap($value) ? $value : [];
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    protected function decodeColumn(Model $record, string $column): array
+    {
+        $raw = $record->getRawOriginal($column);
 
         if (is_array($raw)) {
             return $raw;

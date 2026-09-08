@@ -2,33 +2,50 @@
 
 namespace Tonsoo\FilamentTranslatable\Concerns;
 
+use Tonsoo\FilamentTranslatable\Support\TranslatablePaths;
+
 trait NormalizesTranslatableData
 {
     use UsesFallbackTranslations;
 
     /**
      * @param array<string, mixed> $data
-     * @param array<int, string> $translatableAttributes
+     * @param array<int, string>|TranslatablePaths $translatableAttributes
+     * @param callable(mixed, string|int, array<int, string|int>): mixed $normalizeTranslatableValue
+     * @param array<int, string|int> $path
      * @return array<string, mixed>
      */
     protected function normalizeData(
         array $data,
-        array $translatableAttributes,
+        array|TranslatablePaths $translatableAttributes,
         string $activeLocale,
         callable $normalizeTranslatableValue,
+        array $path = [],
     ): array {
+        $paths = $translatableAttributes instanceof TranslatablePaths
+            ? $translatableAttributes
+            : TranslatablePaths::make($translatableAttributes);
+
         foreach ($data as $key => $value) {
-            if (is_string($key) && in_array($key, $translatableAttributes, true)) {
-                $data[$key] = $normalizeTranslatableValue($value, $key);
+            $here = [...$path, $key];
+
+            if ($paths->isExcluded($here)) {
+                continue;
+            }
+
+            if ($paths->matches($here)) {
+                $data[$key] = $normalizeTranslatableValue($value, $key, $here);
+
                 continue;
             }
 
             if (is_array($value)) {
                 $data[$key] = $this->normalizeData(
                     $value,
-                    $translatableAttributes,
+                    $paths,
                     $activeLocale,
                     $normalizeTranslatableValue,
+                    $here,
                 );
             }
         }

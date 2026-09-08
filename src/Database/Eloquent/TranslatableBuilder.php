@@ -8,6 +8,7 @@ use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Expression as QueryExpression;
+use Tonsoo\FilamentTranslatable\Support\TranslatablePaths;
 
 class TranslatableBuilder extends Builder
 {
@@ -139,9 +140,14 @@ class TranslatableBuilder extends Builder
      */
     protected function resolveTranslatableAttributes(Model $model): array
     {
-        $attributes = $model->getTranslatableAttributes();
+        if (method_exists($model, 'translatablePaths')) {
+            return $model->translatablePaths()->columns();
+        }
 
-        return array_values(array_filter($attributes, static fn (mixed $value): bool => is_string($value) && $value !== ''));
+        return TranslatablePaths::make(array_values(array_filter(
+            $model->getTranslatableAttributes(),
+            static fn (mixed $value): bool => is_string($value) && $value !== '',
+        )))->columns();
     }
 
     /**
